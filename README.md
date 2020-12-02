@@ -261,11 +261,9 @@ Here you can get detailed information on fast_jsonapi.
 
 ## Finally, it’s done
 Now you can add the following line in any controller to authenticate your user.
-
+```
 before_action :authenticate_user!
-
-If you are looking to develop any project on Ruby on Rails then choose us as we are one of the leading Ruby on Rails Development Company that provides quality Ruby on Rails development services. Contact us to hire Ruby on Rails developers for your Ruby on Rails requirement or you can reach us at inquiry@techcompose.com
-
+```
 To test it, you can try this in the browser console
 
 ```js
