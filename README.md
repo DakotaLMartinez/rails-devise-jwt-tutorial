@@ -286,5 +286,7 @@ fetch('/signup', {
   })
   .then(json => console.dir(json))
 ```
-I've been working with this quite a bit, and while I can see the Bearer token in the authorization headers of the Response. I'm not able to access them within the `res` variable. I just get an empty headers object instead. Any ideas?
+I've been working with this quite a bit, and while I can see the Bearer token in the authorization headers of the Response. I'm not able to access them within the `res` variable. I just get an empty headers object instead. The idea would be to access that header and store the token either in a cookie or localStorage, but I'm not currently able to access the token in the header programatically. 
+
+Any ideas?
 
