@@ -1,6 +1,6 @@
 # Rails Devise JWT Tutorial
 
-Thanks to [this tutorial on Tech Compose](https://www.techcompose.com/rails-6-api-fast_jsonapi-gem-with-devise-and-jwt-authentication/)
+Thanks to [this tutorial on Tech Compose](https://www.techcompose.com/rails-6-api-fast_jsonapi-gem-with-devise-and-jwt-authentication/) and the [devise](https://github.com/heartcombo/devise) and [devise-jwt](https://github.com/waiting-for-dev/devise-jwt) gems. Also this [blog post on token recovation strategies](http://waiting-for-dev.github.io/blog/2017/01/24/jwt_revocation_strategies/) was helpful to me.
 
 This article is all about authentication in rails 6 using devise and devise-jwt with fast_jsonapi response.
 
@@ -19,11 +19,17 @@ $ rails new rails-jwt-tutorial -–api -–database=postgresql -T
 Here, I have created a rails 6 application using postgresql (Default SQLite).
 (Note: If you are using postgresql then you have to setup database.yml)
 
- Configure Rack Middleware
+## Configure Rack Middleware
 As this is an API Only application, we have to handle ajax requests. So for that, we have to Rack Middleware for handling Cross-Origin Resource Sharing (CORS)
 
-To do that, Just uncomment the “gem ‘rack-cors’” line from your generated Gemfile. And add the following lines to application.rb.
+To do that, Just uncomment the 
+```
+gem 'rack-cors'
+``` 
+line from your generated Gemfile. And uncomment the contents of `config/initialzers/cors.rb` the following lines to application.rb, adding an expose option in the process:
 
+```rb
+# config/initializers/cors.rb
 config.middleware.insert_before 0, Rack::Cors do
   allow do
     origins '*'
@@ -35,59 +41,69 @@ config.middleware.insert_before 0, Rack::Cors do
     )
   end
 end
-view rawapplication.rb hosted with ❤ by GitHub
-Here, we can see that there should be an “Authorization” header exposed which will be used to dispatch and receive JWT tokens in Auth headers.
+```
 
- Add the needed Gems
+Here, we can see that there should be an "Authorization" header exposed which will be used to dispatch and receive JWT tokens in Auth headers.
+
+## Add the needed Gems
+
 Here, we are going to add gem like ‘devise’ and ‘devise-jwt’ for authentication and the dispatch and revocation of JWT tokens and ‘fast_jsonapi’ gem for json response.
-
+```rb
 gem 'devise'
 gem 'devise-jwt'
 gem 'fast_jsonapi'
-view rawgemfile hosted with ❤ by GitHub
-Then, do ‘bundle install’
+```
 
- Configure devise
+Then, do 
+```bash
+bundle install
+```
+
+## Configure devise
 By running the following command to run a generator
-
+```
 $ rails generate devise:install
-
-It is important to set our navigational formats to empty in the generated devise.rb by adding the following line since it’s an api only app.
-
+```
+It is important to set our navigational formats to empty in the generated devise.rb by uncommenting and modifying the following line since it’s an api only app.
+```
 config.navigational_formats = []
-view rawdevise.rb hosted with ❤ by GitHub
+```
+
 Also, add the following line to config/environments/development.rb
-
+```
 config.action_mailer.default_url_options = { host: 'localhost', port: 3000 }
-view rawdevelopment.rb hosted with ❤ by GitHub
- Create User model
+```
+
+## Create User model
 You can create a devise model to represent a user. It can be named as anything. So, I’m gonna be going ahead with User. Run the following command to create User model.
-
+```
 $ rails generate devise User
-
+```
 Then run migrations using,
-$ rake db:setup
-or by,
-$ rake db:create
-$ rake db:migrate
 
- Create devise controllers and routes
-We need to create two controllers (sessions, registrations) to handle sign ups and sign ins. By,
-
+```
+$ rails db:create
+$ rails db:migrate
+```
+## Create devise controllers and routes
+We need to create two controllers (sessions, registrations) to handle sign ups and sign ins. 
+```
 rails g devise:controllers users -c sessions registrations
-
-specify that they will be responding to JSON requests. The files will looks like,
-
+```
+specify that they will be responding to JSON requests. The files will look like this:
+```rb
 class Users::SessionsController < Devise::SessionsController
   respond_to :json
 end
-view rawSessionsController.rb hosted with ❤ by GitHub
-class Users::RegistrationsController < Devise::SessionsController
+```
+```rb
+class Users::RegistrationsController < Devise::RegistrationsController
   respond_to :json
 end
-view rawregistrations_controller.rb hosted with ❤ by GitHub
+```
 Then, add the routes aliases to override default routes provided by devise in the routes.rb
 
+```rb
 Rails.application.routes.draw do
   devise_for :users, path: '', path_names: {
     sign_in: 'login',
@@ -99,16 +115,14 @@ Rails.application.routes.draw do
     registrations: 'users/registrations'
   }
 end
-view rawroutes.rb hosted with ❤ by GitHub
- Configure devise-jwt
-Create a rake secret by running the following command.
+```
 
-$ bundle exec rake secret
+## Configure devise-jwt
 
 Add the following lines to devise.rb
-
+```rb
 config.jwt do |jwt|
-    jwt.secret = GENERATED_SECRET_KEY
+    jwt.secret = Rails.application.credentials.fetch(:secret_key_base)
     jwt.dispatch_requests = [
       ['POST', %r{^/login$}]
     ]
@@ -117,60 +131,96 @@ config.jwt do |jwt|
     ]
     jwt.expiration_time = 30.minutes.to_i
 end
-view rawdevise.rb hosted with ❤ by GitHub
+```
+
 Here, we are just specifying that on every post request to login call, append JWT token to Authorization header as “Bearer” + token when there’s a successful response sent back and on a delete call to logout endpoint, the token should be revoked.
 
-The jwt.expiration_time sets the expiration time for the generated token. In this example, it’s 30 minutes.
+The `jwt.expiration_time` sets the expiration time for the generated token. In this example, it’s 30 minutes.
 
- Set up a revocation strategy
-Revocation of token is conflicting with the main purpose of JWT token. Still devise-jwt comes with three revocation strategies out of the box. Some of them are implementations of what is discussed in the blog post JWT Revocation Strategies
+## Set up a revocation strategy
+Revocation of tokens is an important security concern. The `devise-jwt` gme comes with three revocation strategies out of the box. You can read more about them in this [blog post on token recovation strategies](http://waiting-for-dev.github.io/blog/2017/01/24/jwt_revocation_strategies/). 
 
-Here, for the revocation of tokens, we will be using one of the 3 strategies.
+For now, we'll be going with the one they recommended with is to store a single valid user attached token with the user record in the users table.
 
-Create a jwt_blacklist model by the following command
+Here, the model class acts itself as the revocation strategy. It needs a new string column with name `jti` to be added to the user. `jti` stands for JWT ID, and it is a standard claim meant to uniquely identify a token.
 
-$ rails g model jwt_blacklist jti:string:index exp:datetime
+It works like the following:
 
-Add these two lines to the “jwt_blacklist.rb”
+- When a token is dispatched for a user, the `jti` claim is taken from the `jti` column in the model (which has been initialized when the record has been created).
+- At every authenticated action, the incoming token `jti` claim is matched against the `jti` column for that user. The authentication only succeeds if they are the same.
+- When the user requests to sign out its `jti` column changes, so that provided token won't be valid anymore.
 
-include Devise::JWT::RevocationStrategies::Blacklist
-self.table_name = 'jwt_blacklists'
-view rawjwt_blacklist.rb hosted with ❤ by GitHub
-Add these two options to your devise User model to specify that the model will be jwt authenticatable and will be using the blacklist model we just created for revocation.
+In order to use it, you need to add the `jti` column to the user model. So, you have to set something like the following in a migration:
 
-:jwt_authenticatable, jwt_revocation_strategy: JwtBlacklist
-
-The final user model will look like this
-
-class User < ApplicationRecord
-  devise :database_authenticatable, :registerable,
-  :recoverable, :rememberable, :validatable,
-  :jwt_authenticatable, jwt_revocation_strategy: JwtBlacklist
+```ruby
+def change
+  add_column :users, :jti, :string, null: false
+  add_index :users, :jti, unique: true
+  # If you already have user records, you will need to initialize its `jti` column before setting it to not nullable. Your migration will look this way:
+  # add_column :users, :jti, :string
+  # User.all.each { |user| user.update_column(:jti, SecureRandom.uuid) }
+  # change_column_null :users, :jti, false
+  # add_index :users, :jti, unique: true
 end
-view rawUser.rb hosted with ❤ by GitHub
-Now run migrations using “rails db:migrate”
+```
 
- Add respond_with using fast_jsonapi method
+To add this, we can run
+```
+rails g migration addJtiToUsers jti:string:index:unique
+```
+And then make sure to add `null: false` to the `add_column` line and `unique: true` to the `add_index` line
+
+**Important:** You are encouraged to set a unique index in the `jti` column. This way we can be sure at the database level that there aren't two valid tokens with same `jti` at the same time.
+
+Then, you have to add the strategy to the model class and configure it accordingly:
+
+```ruby
+class User < ApplicationRecord
+  include Devise::JWT::RevocationStrategies::JTIMatcher
+
+  devise :database_authenticatable,
+         :jwt_authenticatable, jwt_revocation_strategy: self
+end
+```
+
+Be aware that this strategy makes uses of `jwt_payload` method in the user model, so if you need to use it don't forget to call `super`:
+
+```ruby
+def jwt_payload
+  super.merge('foo' => 'bar')
+end
+```
+
+Now run migrations using 
+```bash
+rails db:migrate
+```
+
+## Add respond_with using fast_jsonapi method
 As we already added a fast_jsonapi gem. For json response for user data, we have to create a user serializer. By following command,
 
-$ rails generate serializer user
-
-It will create a serializer with predefined structure.Now, we have to add the attributes which we have to set as a user response. So I have added user’s id, email and created_at.So the final version of user_serializer.rb
-
+```
+$ rails generate serializer user id email created_at
+```
+It will create a serializer with predefined structure.Now, we have to add the attributes which we have to set as a user response. So I have added user’s id, email and created_at. So the final version of user_serializer.rb looks like this:
+```rb
 class UserSerializer
   include FastJsonapi::ObjectSerializer
   attributes :id, :email, :created_at
 end
-view rawuser_serializer.rb hosted with ❤ by GitHub
-We can access serializer data for single record by,
+```
 
+We can access serializer data for single record by,
+```rb
 UserSerializer.new(resource).serializable_hash[:data][:attributes]
 And multiple records by,
 UserSerializer.new(resource).serializable_hash[:data].map{|data| data[:attributes]}
+```
 
-Now, we have to tell devise to communicate through JSON by adding these methods in the RegistrationsController and SessionsController
+Now, we have to tell devise to communicate through JSON by adding these methods in the `RegistrationsController` and `SessionsController`
 
-class Users::RegistrationsController < Devise::SessionsController
+```rb
+class Users::RegistrationsController < Devise::RegistrationsController
   respond_to :json
   private
 
@@ -181,7 +231,7 @@ class Users::RegistrationsController < Devise::SessionsController
     }
   end
 end
-view rawregistrations_controller.rb hosted with ❤ by GitHub
+
 class Users::SessionsController < Devise::SessionsController
   respond_to :json
   private
@@ -197,22 +247,64 @@ class Users::SessionsController < Devise::SessionsController
     head :ok
   end
 end
-
+```
   
-view rawSessionsController.rb hosted with ❤ by GitHub
 You can modify the column name and data format by overwrite attribute:
-
+```rb
 attribute :created_date do |user|
-       user.created_at.strftime(‘%d/%m/%Y’)
+       user && user.created_at.strftime('%d/%m/%Y')
 end
-
+```
 Here, I have changed created_at attribute’s column name and its format.
 
 Here you can get detailed information on fast_jsonapi.
 
- Finally, it’s done
+## Finally, it’s done
 Now you can add the following line in any controller to authenticate your user.
 
 before_action :authenticate_user!
 
 If you are looking to develop any project on Ruby on Rails then choose us as we are one of the leading Ruby on Rails Development Company that provides quality Ruby on Rails development services. Contact us to hire Ruby on Rails developers for your Ruby on Rails requirement or you can reach us at inquiry@techcompose.com
+
+To test it, you can try this in the browser console
+
+```js
+fetch('/signup', {  
+    method: 'post',
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Expose-Headers': 'Authorization',
+      'Access-Control-Allow-Headers': 'Authorization',
+      'credentials': 'include'
+    },
+    body: JSON.stringify({ "user": {
+      "email" : "test@test.com",
+      "password" : "password"
+    }})
+})
+  .then(res => {
+    debugger
+    return res.json()
+  })
+  .then(json => console.dir(json))
+```
+```js
+fetch('/signup', {  
+    method: 'post',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ "user": {
+      "email" : "test@test.com",
+      "password" : "password"
+    }})
+})
+  .then(res => {
+    debugger
+    return res.json()
+  })
+  .then(json => console.dir(json))
+
+```
+I've been working with this quite a bit, and while I can see the Bearer token in the authorization headers of the Response. I'm not able to access them within the `res` variable. I just get an empty headers object instead. Any ideas?
+
