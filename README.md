@@ -267,7 +267,7 @@ before_action :authenticate_user!
 To test it, you can try this in the browser console
 
 ```js
-fetch('/signup', {  
+fetch('http://localhost:3000/signup', {  
     method: 'post',
     headers: {
       'Content-Type': 'application/json',
@@ -290,3 +290,36 @@ I've been working with this quite a bit, and while I can see the Bearer token in
 
 Any ideas?
 
+To replicate, you'd probably need to run:
+
+```
+git clone git@github.com:DakotaLMartinez/rails-devise-jwt-tutorial.git
+cd rails-devise-jwt-tutorial
+rails db:create
+rails db:migrate
+rails s
+```
+
+Then in a browser console somewhere:
+```
+fetch('http://localhost:3000/signup', {  
+    method: 'post',
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Expose-Headers': 'Authorization',
+      'Access-Control-Allow-Headers': 'Authorization',
+      'credentials': 'include'
+    },
+    body: JSON.stringify({ "user": {
+      "email" : "test@test.com",
+      "password" : "password"
+    }})
+})
+  .then(res => {
+    debugger
+    return res.json()
+  })
+  .then(json => console.dir(json))
+```
+
+If you have another terminal open running the `rails console` you can see that the user is in fact created. And then in the network tab in the browser dev tools the authorization header is there in the response, but it's not accessible within the fetch response. I've read about this being a server side issue in that the server is not granting access to the header via javascript, but it looks to me like I've done that properly. I'm really stumped here and would be grateful for any help y'all might be able to provide :)
