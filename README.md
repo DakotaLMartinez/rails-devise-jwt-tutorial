@@ -288,23 +288,5 @@ fetch('/signup', {
   })
   .then(json => console.dir(json))
 ```
-```js
-fetch('/signup', {  
-    method: 'post',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ "user": {
-      "email" : "test@test.com",
-      "password" : "password"
-    }})
-})
-  .then(res => {
-    debugger
-    return res.json()
-  })
-  .then(json => console.dir(json))
-
-```
 I've been working with this quite a bit, and while I can see the Bearer token in the authorization headers of the Response. I'm not able to access them within the `res` variable. I just get an empty headers object instead. Any ideas?
 
