@@ -270,10 +270,7 @@ To test it, you can try this in the browser console
 fetch('http://localhost:3000/signup', {  
     method: 'post',
     headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Expose-Headers': 'Authorization',
-      'Access-Control-Allow-Headers': 'Authorization',
-      'credentials': 'include'
+      'Content-Type': 'application/json'
     },
     body: JSON.stringify({ "user": {
       "email" : "test@test.com",
@@ -281,7 +278,7 @@ fetch('http://localhost:3000/signup', {
     }})
 })
   .then(res => {
-    debugger
+    console.log(res.headers.get('Authorization'))
     return res.json()
   })
   .then(json => console.dir(json))
