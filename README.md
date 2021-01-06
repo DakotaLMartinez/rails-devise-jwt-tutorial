@@ -190,19 +190,18 @@ def jwt_payload
   super.merge('foo' => 'bar')
 end
 ```
-
-Now run migrations using 
+In our case, we won't be needing to interact with the jwt_payload directly, so we can move on for now. Next, we'll run migrations using 
 ```bash
 rails db:migrate
 ```
 
 ## Add respond_with using fast_jsonapi method
-As we already added a fast_jsonapi gem. For json response for user data, we have to create a user serializer. By following command,
+As we already added the `fast_jsonapi` gem, we can generate a serializer to configure the json format we'll want to send to our front end API.
 
 ```
 $ rails generate serializer user id email created_at
 ```
-It will create a serializer with predefined structure.Now, we have to add the attributes which we have to set as a user response. So I have added user’s id, email and created_at. So the final version of user_serializer.rb looks like this:
+It will create a serializer with a predefined structure. Now, we have to add the attributes we want to include as a user response. So, we'll add the user's id, email and created_at. So the final version of user_serializer.rb looks like this:
 ```rb
 class UserSerializer
   include FastJsonapi::ObjectSerializer
@@ -225,10 +224,16 @@ class Users::RegistrationsController < Devise::RegistrationsController
   private
 
   def respond_with(resource, _opts = {})
-    render json: {
-    status: {code: 200, message: 'Logged in successfully.'},
-    data: UserSerializer.new(resource).serializable_hash[:data][:attributes]
-    }
+    if resource.persisted?
+      render json: {
+        status: {code: 200, message: 'Logged in sucessfully.'},
+        data: UserSerializer.new(resource).serializable_hash[:data][:attributes]
+      }
+    else
+      render json: {
+        status: {message: "User couldn't be created successfully. #{resource.errors.full_messages.to_sentence}"}
+      }, status: :unprocessable_entity
+    end
   end
 end
 
@@ -244,20 +249,30 @@ class Users::SessionsController < Devise::SessionsController
   end
   
   def respond_to_on_destroy
-    head :ok
+    if current_user 
+      render json: {
+        status: 200,
+        message: "logged out successfully"
+      }, status: :ok
+    else
+      render json: { 
+        status: 401,
+        message: "Couldn't find an active session."
+      }, status: :unauthorized
+    end
   end
 end
 ```
   
-You can modify the column name and data format by overwrite attribute:
+Remember, you can use the attribute method in a serializer to add a property to the JSON response based on an expression you return from a block that has access to the object you're serializing. For example, you can modify the column name and data format by overwrite attribute:
 ```rb
 attribute :created_date do |user|
        user && user.created_at.strftime('%d/%m/%Y')
 end
 ```
-Here, I have changed created_at attribute’s column name and its format.
+Here, we're adding a created_date attribute that will reformat the user's created_at value in the one we specify.
 
-Here you can get detailed information on fast_jsonapi.
+Here you can get [detailed information on fast_jsonapi](https://github.com/Netflix/fast_jsonapi).
 
 ## Finally, it’s done
 Now you can add the following line in any controller to authenticate your user.
@@ -278,31 +293,93 @@ fetch('http://localhost:3000/signup', {
     }})
 })
   .then(res => {
-    debugger
-    return res.json()
+    if(res.ok) {
+      console.log(res.headers.get('Authorization'))
+      localStorage.setItem('token', res.headers.get('Authorization'))
+      return res.json()
+    } else {
+      throw new Error(res);
+    }
   })
   .then(json => console.dir(json))
+  .catch(err => console.error(err))
 ```
-I've been working with this quite a bit, and while I can see the Bearer token in the authorization headers of the Response. I'm not able to access them within the `res` variable. I just get an empty headers object instead. The idea would be to access that header and store the token either in a cookie or localStorage, but I'm not currently able to access the token in the header programatically. 
+If everything worked correctly, we should see the token logged to the console as well as the server response looking something like this:
 
-Any ideas?
+![Fetch Authentication Check for Devise JWT backend](https://res.cloudinary.com/dnocv6uwb/image/upload/v1607455998/fetch-auth-with-jwt-check_erkubi.jpg)
 
-To replicate, you'd probably need to run:
+After you've got the token stored locally, you can try it out to make a request that requires authentication. To do this, we'd need to actually have a route like this that requires users to be logged in to get a response.
 
 ```
-git clone git@github.com:DakotaLMartinez/rails-devise-jwt-tutorial.git
-cd rails-devise-jwt-tutorial
-rails db:create
-rails db:migrate
-rails s
+rails g controller private test
 ```
 
-Then in a browser console somewhere:
+```rb
+class PrivateController < ApplicationController
+  before_action :authenticate_user!
+  def test
+    render json: { 
+      message: "This is a private message for #{current_user.email} you should only see if you've got a correct token"
+    }
+  end
+end
+```
+
+And now, to test this out in the browser, you can run this:
 ```js
-fetch('http://localhost:3000/signup', {  
+fetch('http://localhost:3000/private/test', {  
+  headers: {
+    'Content-Type': 'application/json'
+  }
+})
+  .then(res => {
+    if(res.ok) {
+      return res.json()
+    } else if (res.status == "401") {
+      throw new Error("Unauthorized Request. Must be signed in.");
+    }
+  })
+  .then(json => console.dir(json))
+  .catch(err => console.error(err))
+
+```
+Because we're not including the authorization token in the header, the response status should be unauthorized (401) and the error will be thrown, resulting in a rejected promise. See below:
+![Result of unauthenticated request to private route](https://res.cloudinary.com/dnocv6uwb/image/upload/v1607479933/Screen_Shot_2020-12-08_at_11.42.49_AM_evbgtn.png)
+
+As expected, without our JWT, the request is unauthorized because we have the `before_action :authenticate_user!` in our controller. So, now we can add the token in the header and see the difference
+
+```js
+fetch('http://localhost:3000/private/test', {  
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': localStorage.getItem('token')
+  }
+})
+  .then(res => {
+    if(res.ok) {
+      return res.json()
+    } else if (res.status == "401") {
+      throw new Error("Unauthorized Request. Must be signed in.");
+    }
+  })
+  .then(json => console.dir(json))
+  .catch(err => console.error(err))
+
+```
+
+![Authenticated fetch request in browser](https://res.cloudinary.com/dnocv6uwb/image/upload/v1607479933/Screen_Shot_2020-12-08_at_11.59.34_AM_rqremc.png)
+
+Notice that this time we're actually able to access the private message and it includes information about the `current_user` which is now accessible on the server side because the JWT in the authorization header has correctly identified us to the server on the subsequent request.
+
+## Handling logout
+
+Finally, we want to be able to log a user out of our application. Our tokens only last for 30 minutes, so we'll esentially be logged out after 30 minutes of no activity. That said, we'd like to allow users to end their sessions a bit early if they so choose. To test this out. We'll want to sign in first, store the token, make a request to /private/test and make sure it works then logout and make another request to /private/test and it shouldn't work.
+
+```js
+fetch('http://localhost:3000/login', {  
     method: 'post',
     headers: {
-      'Content-Type': 'application/json',
+      'Content-Type': 'application/json'
     },
     body: JSON.stringify({ "user": {
       "email" : "test@test.com",
@@ -310,10 +387,150 @@ fetch('http://localhost:3000/signup', {
     }})
 })
   .then(res => {
-    console.log(res.headers.get('Authorization'))
-    return res.json()
+    if(res.ok) {
+      console.log(res.headers.get('Authorization'))
+      localStorage.setItem('token', res.headers.get('Authorization'))
+      return res.json()
+    } else {
+      return res.text().then(text => Promise.reject(text));
+    }
   })
   .then(json => console.dir(json))
+  .catch(err => console.error(err))
+
 ```
 
-If you have another terminal open running the `rails console` you can see that the user is in fact created. And then in the network tab in the browser dev tools the authorization header is there in the response, but it's not accessible within the fetch response. I've read about this being a server side issue in that the server is not granting access to the header via javascript, but it looks to me like I've done that properly. I'm really stumped here and would be grateful for any help y'all might be able to provide :)
+![Browser Result on successful login](https://res.cloudinary.com/dnocv6uwb/image/upload/v1607495088/fetch-auth-login-successful_lexjgm.jpg)
+
+Notice here we see the token logged again.
+
+Next we'll want to make the request to logout. At this point, we won't actually remove the token from localStorage, just to confirm that the same token no longer allows us to make authenticated requests. When you actually use this code, you'll want to remove the token from localStorage upon successful logout. We don't need to store a token if it's no longer valid and having a token in localStorage could be used as an indicator of an active session in conditional logic if we remove the token after a session expires.
+
+*** Note, you'll need to make sure you include the JWT in the authorization headers of this logout request, otherwise Devise won't know which user's token to revoke.  
+
+```js
+fetch('http://localhost:3000/logout', {  
+  method: 'delete',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': localStorage.getItem('token')
+  }
+})
+  .then(res => {
+    if(res.ok) {
+      return res.json()
+    } else {
+      return res.json().then(json => Promise.reject(json))
+    }
+  })
+  .then(json => {
+    console.dir(json)
+  })
+  .catch(err => console.error(err))
+```
+
+![Successful Async Logout request](https://res.cloudinary.com/dnocv6uwb/image/upload/v1607496671/Screen_Shot_2020-12-08_at_9.35.51_PM_f0r5mc.png)
+
+Now if we make the the request for private/test again using the same token (still in localStorage)
+using the following code:
+```js
+fetch('http://localhost:3000/private/test', {  
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': localStorage.getItem('token')
+  }
+})
+  .then(res => {
+    if(res.ok) {
+      return res.json()
+    } else if (res.status == "401") {
+      return res.text().then(text => Promise.reject(text))
+    }
+  })
+  .then(json => console.dir(json))
+  .catch(err => console.error(err))
+
+```
+
+We'll get an error when we do so letting us know we have a revoked token. 
+![Request for private route using revoked token](https://res.cloudinary.com/dnocv6uwb/image/upload/v1607496716/Screen_Shot_2020-12-08_at_10.13.54_PM_ziteww.png)
+
+We actually had to use res.text() here instead of res.json() to read this response properly. 
+Let's see what happens if we use the same code to request the private route, but use an expired token.
+
+![Request to private route using expired token](https://res.cloudinary.com/dnocv6uwb/image/upload/v1607538705/Screen_Shot_2020-12-09_at_10.31.26_AM_qqh2a9.png)
+
+Finally, let's try out the request with the header present but no token. To do this, let's remove the token from localStorage and then run the fetch again.
+
+```js
+localStorage.removeItem('token')
+```
+
+![Request Sent without any active token](https://res.cloudinary.com/dnocv6uwb/image/upload/v1607538866/Screen_Shot_2020-12-09_at_10.34.01_AM_il2xf0.png)
+
+You can see here how your API will respond to requests made to protected routes in differing states of authorization. 
+
+Header | Status | Content
+------- | ------- | -------
+Authorization Header with valid JWT | 200 | successful response containing JSON
+Authorization Header with expired JWT | 401 | text response indicating `Signature has expired`
+Authorization Header with no JWT | 401 | text response indicating `You need to sign in or sign up before continuing.`
+
+If we want to have a separate error messages for our users if their session is expired, then we can leave things as they are. If we just wanted our users to see the `You need to sign in or signup` message, we could also store the time that a token was created in localStorage. We can introduce a function to retrieve the token and only return the token if it was created less than 30 minutes ago (or whatever your jwt expiration time is set to in the `config/initializers/devise.rb` initializer).
+
+
+```js
+function setToken(token) {
+  localStorage.setItem('token', token);
+  localStorage.setItem('lastLoginTime', new Date(Date.now()).getTime())
+}
+function getToken() {
+  let now = new Date(Date.now()).getTime();
+  let thirtyMinutes = 1000 * 60 * 30;
+  let timeSinceLastLogin = now - localStorage.getItem('lastLoginTime');
+  if(timeSinceLastLogin < thirtyMinutes) {
+    return localStorage.getItem('token');
+  }
+}
+
+fetch('http://localhost:3000/login', {  
+    method: 'post',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ "user": {
+      "email" : "test@test.com",
+      "password" : "password"
+    }})
+})
+  .then(res => {
+    if(res.ok) {
+      setToken(res.headers.get('Authorization'))
+      return res.json()
+    } else {
+      return res.text().then(text => Promise.reject(text));
+    }
+  })
+  .then(json => console.dir(json))
+  .catch(err => console.error(err))
+
+// Then wait 30 minutes and do this:
+
+fetch('http://localhost:3000/private/test', {  
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': getToken()
+  }
+})
+  .then(res => {
+    if(res.ok) {
+      return res.json()
+    } else if (res.status == "401") {
+      return res.text().then(text => Promise.reject(text))
+    }
+  })
+  .then(json => console.dir(json))
+  .catch(err => console.error(err))
+
+
+```
