@@ -30,7 +30,7 @@ line from your generated Gemfile. And uncomment the contents of `config/initialz
 
 ```rb
 # config/initializers/cors.rb
-config.middleware.insert_before 0, Rack::Cors do
+Rails.application.config.middleware.insert_before 0, Rack::Cors do
   allow do
     origins '*'
     resource(
@@ -271,9 +271,6 @@ fetch('http://localhost:3000/signup', {
     method: 'post',
     headers: {
       'Content-Type': 'application/json',
-      'Access-Control-Expose-Headers': 'Authorization',
-      'Access-Control-Allow-Headers': 'Authorization',
-      'credentials': 'include'
     },
     body: JSON.stringify({ "user": {
       "email" : "test@test.com",
@@ -301,14 +298,11 @@ rails s
 ```
 
 Then in a browser console somewhere:
-```
+```js
 fetch('http://localhost:3000/signup', {  
     method: 'post',
     headers: {
       'Content-Type': 'application/json',
-      'Access-Control-Expose-Headers': 'Authorization',
-      'Access-Control-Allow-Headers': 'Authorization',
-      'credentials': 'include'
     },
     body: JSON.stringify({ "user": {
       "email" : "test@test.com",
@@ -316,7 +310,7 @@ fetch('http://localhost:3000/signup', {
     }})
 })
   .then(res => {
-    debugger
+    console.log(res.headers.get('Authorization'))
     return res.json()
   })
   .then(json => console.dir(json))
