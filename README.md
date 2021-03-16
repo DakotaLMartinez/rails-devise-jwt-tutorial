@@ -275,16 +275,10 @@ class Users::SessionsController < Devise::SessionsController
   private
 
   def respond_with(resource, _opts = {})
-    if resource.persisted?
-      render json: {
-        status: {code: 200, message: 'Logged in sucessfully.'},
-        data: UserSerializer.new(resource).serializable_hash[:data][:attributes]
-      }, status: :ok
-    else
-      render json: {
-        message: "Invalid email or password. Please try again."
-      }, status: :unauthorized
-    end
+    render json: {
+      status: {code: 200, message: 'Logged in sucessfully.'},
+      data: UserSerializer.new(resource).serializable_hash[:data][:attributes]
+    }, status: :ok
   end
 
   def respond_to_on_destroy
@@ -315,6 +309,34 @@ Here, we're adding a created_date attribute that will reformat the user's create
 
 Here you can get [detailed information on fast_jsonapi](https://github.com/Netflix/fast_jsonapi).
 
+## Adding a '/current_user' endpoint
+
+We'll probably want to create an endpoint that will return the current user given a valid JWT in the headers. This will be useful in our frontend code to be able to recognize if we have an active session before visiting a client side route that shouldn't be accessible without an active session.
+
+```bash
+rails g controller current_user index
+```
+
+And then in `config/routes.rb` find this line:
+
+```rb
+get 'current_user/index'
+```
+and replace it with
+```rb
+get '/current_user', to: 'current_user#index'
+```
+Now, fill in the `CurrentUserController` so it looks like this:
+
+```rb
+class CurrentUserController < ApplicationController
+  before_action :authenticate_user!
+  def index
+    render json: current_user, status: :ok
+  end
+end
+```
+Adding the `before_action :authenticate_user` will ensure that we only see a 200 response if we have a valid JWT in the headers. If we don't this endpoint should return a `401` status code.
 ## Finally, it’s done
 
 Now you can add the following line in any controller to authenticate your user.
@@ -581,3 +603,4 @@ fetch("http://localhost:3000/private/test", {
   .then((json) => console.dir(json))
   .catch((err) => console.error(err));
 ```
+
