@@ -337,6 +337,41 @@ class CurrentUserController < ApplicationController
 end
 ```
 Adding the `before_action :authenticate_user` will ensure that we only see a 200 response if we have a valid JWT in the headers. If we don't this endpoint should return a `401` status code.
+
+## Note for React Users
+
+If you're going to use this api with a React application, you may want to set the default port to 3001 so that it won't conflict with the react dev server. If you set the default to port for the API to 3001, you'll have consistency with the two ports when you run both servers simultaneously. If you don't do this, you'd always need to make sure you start the front end dev server before the backend one to make sure that the ports are consistent.
+
+To do this, you'll need to make changes in two different files: `config/environments/development.rb` and `config/puma.rb`. In `config/environments/development.rb`, replace the following:
+
+```rb
+# config/environments/development.rb
+config.action_mailer.default_url_options = { host: 'localhost', port: 3000 }
+```
+
+with 
+
+```rb
+config.action_mailer.default_url_options = { host: 'localhost', port: 3001 }
+```
+
+And, in `config/puma.rb`, replace the following:
+
+```rb
+port        ENV.fetch("PORT") { 3000 }
+```
+
+with 
+```rb
+port        ENV.fetch("PORT") { 3001 }
+```
+
+After you've made these changes, you can run 
+
+```bash
+rails s
+```
+And it will boot up the server on port 3001.
 ## Finally, it’s done
 
 Now you can add the following line in any controller to authenticate your user.
